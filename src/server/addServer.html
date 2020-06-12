@@ -38,6 +38,14 @@
 					</span>
 				</div>
 
+				<p>${d.localize["tds.webview.dir.include"]}<b>*${d.localize["tds.webview.dir.include2"]}</b></p><!--Includes directory:--><!--Allows multiple-->
+				<div class="wrap-input">
+					<textarea class="inputText" id="includePath" placeholder="Ex: C:/totvs/includes..."></textarea>
+					<input class="inputText" type="file" id="btn-FileInclude" name="btn-FileInclude" onchange='checkDir(event);' webkitdirectory directory/>
+				</div>
+
+				<br>
+
 				<div class="wrap-submit">
 					<input class="btn-submit" id="submitID" type="submit" value="${d.localize['tds.webview.newServer.save']}" onclick="saveServer(false)" /> <!--Save-->
 					<input class="btn-submit" id="submitID" type="submit" value="${d.localize['tds.webview.newServer.saveClose']}" onclick="saveServer(true)" /> <!--Save/Close-->
@@ -50,19 +58,46 @@
 <script>
 	const vscode = acquireVsCodeApi();
 
+	function checkDir(event) {
+		var input = event.target;
+		if (input.files.length > 0) {
+			var selectedDir = input.files[0].path;
+			vscode.postMessage({
+				command: 'checkDir',
+				selectedDir: selectedDir
+			});
+		}
+	}
+
 	function saveServer(close) {
 		const addressID = document.getElementById('addressID').value;
 		const serverNameID = document.getElementById('nameID').value;
 		const portID = document.getElementById('portID').value;
+		const includePath = document.getElementById('includePath').value.split(";");
 
 		vscode.postMessage({
 			command: 'saveServer',
 			address: addressID,
 			serverName: serverNameID,
 			port: portID,
-			'close': close
+			'close': close,
+			includes: includePath
 		});
 	}
+
+	window.addEventListener('message', event => {
+		const message = event.data; // The JSON data our extension sent
+
+		switch (message.command) {
+			case 'checkedDir':
+				var checkedDir = message.checkedDir;
+				if (includePath.value == "")
+					includePath.value = checkedDir;
+				else
+					includePath.value = includePath.value + ";" + checkedDir;
+				break;
+		}
+	});
 </script>
 
 </html>

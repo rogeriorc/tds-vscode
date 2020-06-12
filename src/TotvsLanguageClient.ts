@@ -2,7 +2,7 @@ import { CodeLens, commands, DecorationOptions, DecorationRangeBehavior, Decorat
 import { CancellationToken, LanguageClient, LanguageClientOptions, ProvideCodeLensesSignature, RevealOutputChannelOn, ServerOptions } from 'vscode-languageclient/lib/main';
 import * as ls from 'vscode-languageserver-types';
 import vscode = require('vscode');
-import { chmodSync } from 'fs';
+import { statSync, chmodSync } from 'fs';
 import { reconnectLastServer } from './serversView';
 
 import * as nls from 'vscode-nls';
@@ -10,6 +10,8 @@ import { syncSettings } from './server/languageServerSettings';
 let localize = nls.loadMessageBundle();
 
 export let sessionKey: string;
+
+export let isLSInitialized = false;
 
 export function getLanguageClient(context: ExtensionContext): LanguageClient {
 
@@ -65,7 +67,14 @@ export function getLanguageClient(context: ExtensionContext): LanguageClient {
 		advpls = dir + "/node_modules/@totvs/tds-ls/bin/windows/advpls.exe";
 	} else if (process.platform === "linux") {
 		advpls = dir + "/node_modules/@totvs/tds-ls/bin/linux/advpls";
-		chmodSync(advpls, '755');
+		if (statSync(advpls).mode != 33261) {
+			chmodSync(advpls, '755');
+		}
+	} else if (process.platform === "darwin") {
+		advpls = dir + "/node_modules/@totvs/tds-ls/bin/mac/advpls";
+		if (statSync(advpls).mode != 33261) {
+			chmodSync(advpls, '755');
+		}
 	}
 
 	let serverOptions: ServerOptions = {
@@ -122,10 +131,10 @@ export function getLanguageClient(context: ExtensionContext): LanguageClient {
 		revealOutputChannelOn: RevealOutputChannelOn.Never,
 		initializationOptions: clientConfig,
 		middleware: { provideCodeLenses: provideCodeLens },
-		initializationFailedHandler: (e) => {
-			console.log(e);
-			return false;
-		},
+		// initializationFailedHandler: (e) => {
+		// 	console.log(e);
+		// 	return false;
+		// },
 		//errorHandler: new CqueryErrorHandler(workspace.getConfiguration('cquery'))
 	};
 
@@ -137,6 +146,8 @@ export function getLanguageClient(context: ExtensionContext): LanguageClient {
 
 	//let command = serverOptions.command;
 	languageClient.onReady().then(async () => {
+		isLSInitialized = true;
+
 		const configADVPL = vscode.workspace.getConfiguration('totvsLanguageServer');//transformar em configuracao de workspace
 
 		syncSettings();

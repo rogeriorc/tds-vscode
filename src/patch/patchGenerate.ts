@@ -3,8 +3,9 @@ import path = require('path');
 import fs = require('fs');
 import Utils from '../utils';
 import { languageClient } from '../extension';
-import { buildFiles } from '../tdsBuild';
+import { commandBuildFile } from '../compile/tdsBuild';
 import * as nls from 'vscode-nls';
+import { ResponseError } from 'vscode-languageclient';
 
 let localize = nls.loadMessageBundle();
 const compile = require('template-literal');
@@ -23,15 +24,15 @@ const localizeHTML = {
 	"tds.webview.patch.items.generate.close": localize("tds.webview.patch.items.generate.close","Generate/Close"),
 	"tds.webview.patch.message1": localize("tds.webview.patch.message1","The generated patch is based on the files from RPO. Be sure that the included fonts are compiled."),
 	"tds.webview.patch.items.showing": localize("tds.webview.patch.items.showing","Items showing")
-}
+};
 
 export function patchGenerate(context: vscode.ExtensionContext) {
 	{
 		const server = Utils.getCurrentServer();
 		let extensionPath = "";
-		if(!context || context === undefined) {
+		if (!context || context === undefined) {
 			let ext = vscode.extensions.getExtension("TOTVS.tds-vscode");
-			if(ext) {
+			if (ext) {
 				extensionPath = ext.extensionPath;
 			}
 		} else {
@@ -64,7 +65,7 @@ export function patchGenerate(context: vscode.ExtensionContext) {
 
 			if (allInfoServer) {
 				server.address = allInfoServer.address;
-				server.port = allInfoServer.port
+				server.port = allInfoServer.port;
 			}
 
 			// currentPanel.webview.postMessage({
@@ -74,6 +75,13 @@ export function patchGenerate(context: vscode.ExtensionContext) {
 
 			currentPanel.webview.onDidReceiveMessage(message => {
 				switch (message.command) {
+					case 'checkDir':
+						var checkedDir = Utils.checkDir(message.selectedDir);
+						currentPanel.webview.postMessage({
+							command: "checkedDir",
+							checkedDir: checkedDir
+						});
+						break;
 					case 'inspectorObjects':
 						//vscode.window.showInformationMessage(localize("tds.webview.sources.loading","Loading Sources from the Repository."));
 						languageClient.sendRequest('$totvsserver/inspectorObjects', {
@@ -86,12 +94,12 @@ export function patchGenerate(context: vscode.ExtensionContext) {
 							// const message: string = response.message;
 							// if (message == "Success") {
 							// 	vscode.window.showInformationMessage(localize("tds.webview.sources.loaded","Sources loaded from the Repository: ") + response.objects.length);
-							 	currentPanel.webview.postMessage(response.objects)
+								currentPanel.webview.postMessage(response.objects);
 							// } else {
 							// 	vscode.window.showErrorMessage(message);
 							// }
-						}, (err) => {
-							vscode.window.showErrorMessage(err);
+						}, (err: ResponseError<object>) => {
+							vscode.window.showErrorMessage(err.message);
 						});
 						break;
 					case 'patchGenerate':
@@ -99,15 +107,15 @@ export function patchGenerate(context: vscode.ExtensionContext) {
 						const patchName = message.patchName;
 						const patchDest = vscode.Uri.file(message.patchDest).toString();
 
-						if (patchDest == "" || filesPath.length == 0) {
+						if (patchDest === "" || filesPath.length === 0) {
 							vscode.window.showErrorMessage(localize("tds.webview.patch.generate.fail","Generate Patch Fail. Please destination directory and sources/resources list."));
 						} else {
 							//vscode.window.showInformationMessage(localize("tds.webview.patch.generate.start","Start Generate Patch"));
-							sendPatchGenerateMessage(server, "" ,patchDest, 3, patchName, filesPath);
+							sendPatchGenerateMessage(server, "", patchDest, 3, patchName, filesPath);
 						}
 
 						if (currentPanel) {
-							if(message.close){
+							if (message.close) {
 								currentPanel.dispose();
 							}
 						}
@@ -118,7 +126,7 @@ export function patchGenerate(context: vscode.ExtensionContext) {
 				context.subscriptions
 			);
 		} else {
-			vscode.window.showErrorMessage(localize("tds.webview.server.not.connected","There is no server connected."));
+			vscode.window.showErrorMessage(localize("tds.webview.server.not.connected", "There is no server connected."));
 		}
 	}
 }
@@ -127,13 +135,13 @@ export function patchGenerateFromFolder(context: any) {
 
 	const server = Utils.getCurrentServer();
 	if (!server) {
-		vscode.window.showErrorMessage(localize("tds.webview.server.not.connected","There is no server connected."));
+		vscode.window.showErrorMessage(localize("tds.webview.server.not.connected", "There is no server connected."));
 	} else {
 		const options: vscode.OpenDialogOptions = {
 			canSelectMany: false,
 			canSelectFiles: false,
 			canSelectFolders: true,
-			openLabel: localize("tds.webview.server.select.folder.to.save","Select folder to save the Patch"),
+			openLabel: localize("tds.webview.server.select.folder.to.save", "Select folder to save the Patch"),
 			//filters: {
 			//  'Text files': ['txt'],
 			//   'All files': ['*']
@@ -141,10 +149,10 @@ export function patchGenerateFromFolder(context: any) {
 		};
 		vscode.window.showOpenDialog(options).then(fileUri => {
 			if (!fileUri || fileUri === undefined) {
-				vscode.window.showErrorMessage(localize("tds.webview.server.folder.not.selected","Folder not selected. The process will not continue."));
+				vscode.window.showErrorMessage(localize("tds.webview.server.folder.not.selected", "Folder not selected. The process will not continue."));
 			} else {
-				vscode.window.showInputBox( {
-					placeHolder: localize("tds.webview.server.patch.name.empty","Inform the Patch name or let empty to use the default name"),
+				vscode.window.showInputBox({
+					placeHolder: localize("tds.webview.server.patch.name.empty", "Inform the Patch name or let empty to use the default name"),
 					value: ""
 				}).then((patchName) => {
 					const allFilesNames: Array<string> = [];
@@ -152,9 +160,9 @@ export function patchGenerateFromFolder(context: any) {
 					readFiles(context.fsPath, allFilesNames, allFilesFullPath, (err) => {
 						vscode.window.showErrorMessage(err);
 					});
-					buildFiles(allFilesFullPath, false);
+					commandBuildFile(context, false, allFilesFullPath);
 					let destFolder = fileUri[0].toString();
-					sendPatchGenerateMessage(server, "" , destFolder, 3, patchName, allFilesNames);
+					sendPatchGenerateMessage(server, "", destFolder, 3, patchName, allFilesNames);
 					//});
 				});
 			}
@@ -164,7 +172,7 @@ export function patchGenerateFromFolder(context: any) {
 }
 
 export class PatchResult {
-	message: string;
+	returnCode: number;
 }
 
 export class inspectorObject {
@@ -205,32 +213,38 @@ function sendPatchGenerateMessage(server, patchMaster, patchDest, patchType, pat
 			"patchFiles": filesPath
 		}
 	}).then((response: PatchResult) => {
+		if (response.returnCode === 40840) { // AuthorizationTokenExpiredError
+			Utils.removeExpiredAuthorization();
+		}
 		// const message: string = response.message;
 		// if (message == "Success") {
 		// 	vscode.window.showInformationMessage(localize("tds.webview.patch.generate.success","Patch Generated Success "));
 		// } else {
 		// 	vscode.window.showErrorMessage(message);
 		// }
-	}, (err) => {
-		vscode.window.showErrorMessage(err);
+	}, (err: ResponseError<object>) => {
+		vscode.window.showErrorMessage(err.message);
 	});
 }
 
 function readFiles(dirname: string, allFilesNames: Array<String>, allFilesFullPath: Array<string>, onError: any) {
 	let filenames = fs.readdirSync(dirname);
-
-	filenames.forEach(function(filename) {
-		let fullPath = path.join(dirname, filename);
-		if(fs.statSync(fullPath).isDirectory()) {
-			readFiles(fullPath, allFilesNames, allFilesFullPath, onError);
-		} else  {
-			allFilesNames.push(filename);
-			allFilesFullPath.push(fullPath);
+	filenames.forEach(function (filename) {
+		if (!Utils.ignoreResource(filename)) {
+			let fullPath = path.join(dirname, filename);
+			if (fs.statSync(fullPath).isDirectory() && fs.statSync(fullPath)) {
+				readFiles(fullPath, allFilesNames, allFilesFullPath, onError);
+			} else {
+				allFilesNames.push(filename);
+				allFilesFullPath.push(fullPath);
+			}
+		} else {
+			vscode.window.showWarningMessage("File/folder '" + filename + "' was ignored.");
 		}
 	});
 }
 
-function getWebViewContent(context: vscode.ExtensionContext, localizeHTML){
+function getWebViewContent(context: vscode.ExtensionContext, localizeHTML) {
 
 	const htmlOnDiskPath = vscode.Uri.file(path.join(context.extensionPath, 'src', 'patch', 'formGenPatch.html'));
 	const cssOniskPath = vscode.Uri.file(path.join(context.extensionPath, 'resources', 'css', 'form.css'));
@@ -240,5 +254,5 @@ function getWebViewContent(context: vscode.ExtensionContext, localizeHTML){
 
 	let runTemplate = compile(htmlContent);
 
-	return runTemplate({css: cssContent,localize: localizeHTML});
+	return runTemplate({ css: cssContent, localize: localizeHTML });
 }

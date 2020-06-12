@@ -1,9 +1,9 @@
-import { WorkspaceFolder, DebugConfigurationProvider, DebugConfiguration, CancellationToken, ProviderResult, window } from 'vscode';
+import { WorkspaceFolder, DebugConfigurationProvider, DebugConfiguration, CancellationToken, window } from 'vscode';
 import { connectedServerItem } from '../serversView';
-import { sessionKey } from '../TotvsLanguageClient';
 import * as vscode from 'vscode';
 import * as Net from 'net';
-import {localize} from '../extension';
+import { localize } from '../extension';
+import { extractProgram, extractArgs, setDapArgs, getDAP } from './debugConfigs';
 
 /*
  * Set the following compile time flag to true if the
@@ -21,38 +21,19 @@ export class TotvsConfigurationProvider implements DebugConfigurationProvider {
 	 * Massage a debug configuration just before a debug session is being launched,
 	 * e.g. add all missing attributes to the debug configuration.
 	 */
-	resolveDebugConfiguration(folder: WorkspaceFolder | undefined, config: DebugConfiguration, token?: CancellationToken): ProviderResult<DebugConfiguration> {
-
+	//resolveDebugConfiguration(folder: WorkspaceFolder | undefined, config: DebugConfiguration, token?: CancellationToken): ProviderResult<DebugConfiguration> {
+	//async resolveDebugConfiguration(folder: WorkspaceFolder | undefined, config: DebugConfiguration, token?: CancellationToken): Promise<ProviderResult<DebugConfiguration>> {
+	//Parece que mudaram novamente o tipo de retorno dessa funcao, por isso essa nova declaracao.
+	async resolveDebugConfiguration(folder: WorkspaceFolder | undefined, config: DebugConfiguration, token?: CancellationToken): Promise<DebugConfiguration> {
 		if (connectedServerItem !== undefined) {
-
-			// if launch.json is missing or empty
-			if (!config.type && !config.request && !config.name) {
-				const editor = window.activeTextEditor;
-				if (editor && editor.document.languageId === 'totvs-developer-studio') {
-					config.type = TotvsConfigurationProvider.type;
-					config.name = 'Totvs Language Debug';
-					config.request = 'launch';
-					config.program = '${workspaceFolder}/${command:AskForProgramName}';
-					config.smartclientBin = "C:/totvs/bin/smartclient/smartclient.exe";
-					//config.tcpSection = "tcp";
-					//config.environment = "environment";
-				}
-			}
-
 			config.type = TotvsConfigurationProvider.type;
-			config.serverAddress = connectedServerItem.address;
-			config.serverPort = connectedServerItem.port;
-			config.buildVersion = connectedServerItem.buildVersion;
-
 			config.environment = connectedServerItem.currentEnvironment;
-			config.serverName = connectedServerItem.label;
-			config.authToken = connectedServerItem.token;
-			config.publicKey = sessionKey;
+			config.token = connectedServerItem.token;
 
-			var workspaceFolders = vscode.workspace.workspaceFolders;
+			let workspaceFolders = vscode.workspace.workspaceFolders;
 			if (workspaceFolders) {
-				var wsPaths = new Array(workspaceFolders.length);
-				var i = 0;
+				let wsPaths = new Array(workspaceFolders.length);
+				let i = 0;
 				for (const workspaceFolder of workspaceFolders) {
 					const workspaceFolderPath = workspaceFolder.uri.fsPath;
 					wsPaths[i] = workspaceFolderPath;
@@ -63,13 +44,22 @@ export class TotvsConfigurationProvider implements DebugConfigurationProvider {
 
 			if (!config.cwb || (config.cwb === '')) {
 				config.cwb = vscode.workspace.rootPath;
-				window.showInformationMessage(localize('tds.vscode.cwb_warning', 'Parameter cwb not informed. Setting to ${1}', config.cwb));
+				window.showInformationMessage(localize('tds.vscode.cwb_warning', 'Parameter cwb not informed. Setting to {0}', config.cwb));
 			}
 
 			if (!config.program) {
-				return window.showInformationMessage(localize('tds.vscode.program_not_found', "Cannot find a program to debug")).then(_ => {
+				window.showInformationMessage(localize('tds.vscode.program_not_found', "Cannot find a program to debug"));
+				return undefined;	// abort launch
+			}
+
+			if (config.program === "${command:AskForProgramName}") {
+				const value = await vscode.commands.executeCommand("totvs-developer-studio.getProgramName");
+				if (!value) {
+					window.showInformationMessage(localize('tds.vscode.program_not_found', "Cannot find a program to debug"));
 					return undefined;	// abort launch
-				});
+				}
+				config.program = extractProgram(value as string);
+				config.programArguments = extractArgs(value as string);
 			}
 
 			if (EMBED_DEBUG_ADAPTER) {
@@ -88,7 +78,17 @@ export class TotvsConfigurationProvider implements DebugConfigurationProvider {
 				config.debugServer = 8588;//this._server.address().port;
 			}
 
-			return config;
+			let setDapArgsArr: string[] =  [];
+			if (config.logFile) {
+				const ws: string = vscode.workspace.rootPath || '';
+				setDapArgsArr.push("--log-file=" + config.logFile.replace('${workspaceFolder}', ws));
+			}
+			if (config.waitForAttach) {
+				setDapArgsArr.push("--wait-for-attach=" + config.waitForAttach);
+			}
+			setDapArgs(setDapArgsArr);
+
+			return Promise.resolve(config);
 		} else {
 			window.showErrorMessage(localize('tds.vscode.server_not_connected', "Nenhum servidor conectado"));
 			return null;
